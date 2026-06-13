@@ -8,7 +8,7 @@ from panda3d.core import NodePath
 from panda3d.core import AntialiasAttrib
 from panda3d.core import load_prc_file_data
 
-from scene import Scene
+from box_collection import BoxCollection
 
 
 load_prc_file_data("", """
@@ -35,8 +35,8 @@ class FluidCube(ShowBase):
         self.camera.set_pos(Point3(0, -10, 5))
         self.camera.look_at(Point3(0, 0, 0))
 
-        self.scene = Scene()
-        self.scene.create_cube()
+        self.particles = BoxCollection()
+        self.particles.create()
         self.setup_light()
 
         self.clicked = False
@@ -47,12 +47,9 @@ class FluidCube(ShowBase):
         self.accept('escape', sys.exit)
         self.accept('mouse1', self.mouse_click)
         self.accept('mouse1-up', self.mouse_release)
-        self.accept('m', self.move_pieces)
+        self.accept('m', self.start_move_particles)
 
         self.taskMgr.add(self.update, 'update')
-
-    def move_pieces(self):
-        self.do_move = True
 
     def setup_light(self):
         ambient_light = NodePath(AmbientLight('ambient_light'))
@@ -69,6 +66,19 @@ class FluidCube(ShowBase):
         self.render.set_light(directional_light)
         directional_light.node().set_shadow_caster(True)
         self.render.set_shader_auto()
+
+    def start_move_particles(self):
+        delay_time = 0
+
+        if self.particles.all_detached:
+            self.particles.re_create()
+            delay_time = 0.5
+
+        def callback(task):
+            self.do_move = True
+            return task.done
+
+        base.task_mgr.do_method_later(delay_time, callback, 'start_move')
 
     def mouse_click(self):
         self.dragging = True
@@ -111,7 +121,8 @@ class FluidCube(ShowBase):
                     self.rotate_camera(mouse_pos, dt)
 
         if self.do_move:
-            self.scene.move_pieces(dt, task.time)
+            if self.particles.move(dt):
+                self.do_move = False
 
         return task.cont
 
