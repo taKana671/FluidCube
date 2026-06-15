@@ -71,7 +71,7 @@ class FluidCube(ShowBase):
         delay_time = 0
 
         if self.particles.all_detached:
-            self.particles.re_create()
+            self.particles.reset()
             delay_time = 0.5
 
         def callback(task):
