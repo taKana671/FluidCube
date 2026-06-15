@@ -38,6 +38,9 @@ class RotationalComponent:
         curl = self.noise.curl_3d(*(pos * self.noise_scale))
         return curl * self.flow_strength * dt
 
+    def __repr__(self):
+        return f'noise_scale: {self.noise_scale}, flow_strength: {self.flow_strength}'
+
 
 class BoxModel(NodePath):
 
@@ -48,14 +51,21 @@ class BoxModel(NodePath):
         model.copy_to(self)
         self.set_pos(pos)
         self.set_color(color, 1)
-
-        self.outof_range = False
-        self.disappeared = False
+        self.set_flags()
 
         self.rotational_component = rotational_component
         self.scale_speed = scale_speed
+        self.default_pos = pos
 
-    def move(self, dt):
+    def set_flags(self):
+        self.outof_range = False
+        self.disappeared = False
+
+    def reset_np(self):
+        self.set_pos_hpr_scale(self.default_pos, Vec3(0), Vec3(1))
+        self.set_flags()
+
+    def move(self, dt, time_limit):
         if self.disappeared:
             return False
 
@@ -72,7 +82,7 @@ class BoxModel(NodePath):
         hpr = self.get_hpr() + Vec3(angular_speed * dt)
 
         if not self.outof_range:
-            if math.hypot(*next_pos) > 0.5:
+            if math.hypot(*(next_pos - self.default_pos)) > 0.2 or time_limit:
                 self.outof_range = True
 
             self.set_pos_hpr(next_pos, hpr)
@@ -88,7 +98,12 @@ class BoxCollection:
         self.collection = NodePath('collection')
         self.collection.set_pos(Point3(0, 0, 0))
         self.collection.reparent_to(base.render)
+        self.time_limit = 6
         self.boxes = []
+        self.set_flags()
+
+    def set_flags(self):
+        self.total_time = 0
         self.all_detached = False
 
     def create(self, noise_scale=1.05, flow_strength=3):
@@ -100,9 +115,9 @@ class BoxCollection:
         box_size = tip - end
         color = LColor(1, 0, 0, 1)
 
-        rotational_component = RotationalComponent(
+        self.rotational_component = RotationalComponent(
             [0, 0, 300], [0, 0, 600], noise_scale, flow_strength)
-        print(f'noise_scale: {noise_scale}, flow_strength: {flow_strength}')
+        print(self.rotational_component)
 
         for i in range(count):
             z = i * box_size.z + start
@@ -112,31 +127,32 @@ class BoxCollection:
                     x = k * box_size.x + start
                     pos = Point3(x, y, z)
                     serial = f'{i}{j}{k}'
-                    box = BoxModel(serial, model, pos, color, rotational_component)
+                    box = BoxModel(serial, model, pos, color, self.rotational_component)
                     box.reparent_to(self.collection)
                     self.boxes.append(box)
 
         self.collection.set_h(45)
 
-    def re_create(self):
+    def reset(self):
+        self.rotational_component.noise_scale = random.uniform(0.9, 3)
+        self.rotational_component.flow_strength = nonzero_random(-3, 3)
+        print(self.rotational_component)
+
         for box in self.boxes:
+            box.reset_np()
             box.reparent_to(self.collection)
 
-        self.all_detached = False
-
-        self.create(
-            noise_scale=random.uniform(0.9, 3),
-            flow_strength=nonzero_random(-3, 3)
-        )
+        self.set_flags()
 
     def move(self, dt):
         moved_box = 0
+        self.total_time += dt
 
         for box in self.boxes:
-            if box.move(dt):
+            if box.move(dt, self.total_time >= self.time_limit):
                 moved_box += 1
 
         if not moved_box:
             print('Finish.')
             self.all_detached = True
-            return True
+            return self.all_detached
